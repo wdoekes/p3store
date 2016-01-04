@@ -1,0 +1,8 @@
+#!/usr/bin/env python
+import unittest
+
+if __name__ == '__main__':
+    # TODO: allow specific test search?
+    unittest.main(
+        module=None,
+        argv=['test', 'discover', '-v'])
