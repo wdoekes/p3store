@@ -1,5 +1,6 @@
 import os
 from getpass import getpass
+from io import BytesIO
 from shutil import rmtree
 from stat import S_IMODE
 from time import time
@@ -85,9 +86,6 @@ class Gpgmex(object):
         # Init a GPG context.
         self._gpgme = Context()
         self._gpgme.passphrase_cb = self._password_callback
-        # No ascii armor stuff. We'll juggle some base64 around
-        # ourselves.
-        self._gpgme.armor = False
 
     def destroy_homedir(self):
         # Clean up our act. This should be called from tests, but is not
@@ -113,8 +111,24 @@ class Gpgmex(object):
         Get a GpgmexKey wrapped key. Pass key_id as uppercase radix16.
         """
         # "If [PARAM2] is 1, only private keys will be returned."
-        gpgme_key = self._gpgme.get_key(key_id, 0)
+        with self._environment():
+            gpgme_key = self._gpgme.get_key(key_id, 0)
         return GpgmexKey(gpgme_key)
+
+    def import_ascii_key(self, key):
+        keyfile = BytesIO(key.encode('utf-8'))
+        with self._environment():
+            self._gpgme.armor = True
+            res = self._gpgme.import_(keyfile)
+
+        if (res.imported + res.unchanged) != 1:
+            raise ValueError(
+                'import failed (imported={}, unchanged={}); '
+                'homedir issues with {}?'.format(
+                    res.imported, res.unchanged, self._homedir))
+
+    def import_binary_key(self, key):
+        raise NotImplementedError()
 
     def encrypt(self, infile, outfile, public_keys):
         """
@@ -132,8 +146,13 @@ class Gpgmex(object):
         assert hasattr(outfile, 'write')
         assert public_keys
 
-        self._gpgme.encrypt([i.gpgme_key for i in public_keys],
-                            1, infile, outfile)
+        with self._environment():
+            # No ascii armor stuff. We'll juggle some base64 around
+            # ourselves.
+            self._gpgme.armor = False
+            self._gpgme.encrypt(
+                [i.gpgme_key for i in public_keys], 1, infile, outfile)
+
         # length = output.tell()
         outfile.seek(0)
 
@@ -146,7 +165,11 @@ class Gpgmex(object):
         assert hasattr(outfile, 'write')
 
         try:
-            self._gpgme.decrypt(infile, outfile)
+            with self._environment():
+                # No ascii armor stuff. We'll juggle some base64 around
+                # ourselves.
+                self._gpgme.armor = False
+                self._gpgme.decrypt(infile, outfile)
         except GpgmeError as e:
             # If you press ^C during passphrase input.
             #   gpgme.GpgmeError: (7, 58, u'No data')
@@ -237,3 +260,24 @@ class Gpgmex(object):
         # quicker abort: 'Bad file descriptor'
         os.close(fd)
         return ERR_CANCELED
+
+    def _environment(self):
+        """
+        Temporarily set alter environment for GnuPG/gpgme.
+        """
+        return _EnvironmentContext(self._homedir)
+
+
+class _EnvironmentContext(object):
+    def __init__(self, homedir):
+        self.homedir = homedir
+
+    def __enter__(self):
+        self._orig_gnupghome = os.environ.pop('GNUPGHOME', None)
+        os.environ['GNUPGHOME'] = self.homedir
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._orig_gnupghome is None:
+            os.environ.pop('GNUPGHOME')
+        else:
+            os.environ['GNUPGHOME'] = self._orig_gnupghome

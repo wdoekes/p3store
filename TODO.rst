@@ -51,7 +51,8 @@ Server
 Doing soon
 ----------
 
-* PGP: test homedir placement (GNUPGHOME setting?)
+* PGP: add GPG_AGENT_INFO agent disable function to Gpgmex? Can be done with
+  the new _environment() context manager...
 
 
 Not Doing Now

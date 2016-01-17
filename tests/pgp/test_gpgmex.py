@@ -6,6 +6,14 @@ import stat
 import tempfile
 import unittest
 
+try:
+    import pgp
+except ImportError:
+    _pypgp_path = None
+else:
+    _pypgp_path = pgp.__path__[0]
+    del pgp
+
 from p3store.pgp import gpgmex
 
 
@@ -93,9 +101,20 @@ class HomedirTestCase(unittest.TestCase):
 
 
 class EncryptAndDecryptTestCase(unittest.TestCase):
+    def get_example_keys_path(self):
+        return os.path.join(_pypgp_path, 'tests', 'data')
+
+    def get_example_key(self, name):
+        with open(os.path.join(
+                self.get_example_keys_path(), name)) as fh:
+            return fh.read()
+
     def test_encrypt(self):
-        gpg = Gpgmex()
+        gpg = Gpgmex(tempfile.mkdtemp())
         try:
+            # Import <walter-rsa-rsa@example.com> public key.
+            keydata = self.get_example_key('key-example-walter-rsa-rsa.pub')
+            gpg.import_ascii_key(keydata)
             # The fingerprint of <walter-rsa-rsa@example.com>.
             key = gpg.get_key_by_id('E08B48D4923B68D03CE8274DAF386C4BFA33BF5B')
             # Create data and output storage.
@@ -121,8 +140,11 @@ class EncryptAndDecryptTestCase(unittest.TestCase):
         # entry.
         os.environ.pop('GPG_AGENT_INFO')
 
-        gpg = Gpgmex()
+        gpg = Gpgmex(tempfile.mkdtemp())
         try:
+            # Import <walter-rsa-rsa@example.com> secret key.
+            keydata = self.get_example_key('key-example-walter-rsa-rsa.priv')
+            gpg.import_ascii_key(keydata)
             # Load data and output storage.
             infile = io.BytesIO(data)
             outfile = io.BytesIO()
