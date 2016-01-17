@@ -1,4 +1,4 @@
-from .server import ServerTestCase
+from tests.server import ServerTestCase
 
 
 class ServerTest(ServerTestCase):
